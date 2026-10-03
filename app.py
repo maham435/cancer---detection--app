@@ -1,27 +1,39 @@
-import streamlit as st
-import pickle
+import json
 import numpy as np
+import streamlit as st
+import tensorflow as tf
+from PIL import Image
 
-# Trained Model ko load karain
-try:
-    model = pickle.load(open('cancer_model.pkl', 'rb'))
-except FileNotFoundError:
-    st.error("Error: 'cancer_model.pkl' file nahi mili!")
+st.set_page_config(page_title="Skin Cancer Detection", page_icon="🩹")
 
-st.set_page_config(page_title="Cancer Detection App", layout="centered")
-st.title("🎗️ Breast Cancer Detection System")
-st.write("Machine Learning ki madad se tumor ka pata lagayein.")
-st.markdown("---")
+@st.cache_resource
+def load_artifacts():
+    model = tf.keras.models.load_model("best_skin_cancer_model.keras")
+    with open("class_names.json") as f:
+        class_names = json.load(f)
+    return model, class_names
 
-radius_mean = st.number_input("Radius Mean (Tumor ka size):", min_value=0.0, value=14.0)
-texture_mean = st.number_input("Texture Mean (Sath ki khurdrahat):", min_value=0.0, value=20.0)
+model, class_names = load_artifacts()
+IMG_SIZE = (224, 224)
 
-if st.button("🔎 Predict Cancer Status", use_container_width=True):
-    input_features = [radius_mean, texture_mean] + [0.0]*28
-    prediction = model.predict([input_features])
-    
-    st.subheader("📋 Detection Result:")
-    if prediction == 1:
-        st.error("⚠️ **Result: Malignant (Cancerous)**\n\nTumor mein cancer ke aasaar hain. Baraye meherbani doctor se jald rabhta karain.")
-    else:
-        st.success("✅ **Result: Benign (Non-Cancerous)**\n\nTumor normal hai, cancer ke koi aasaar nahi hain.")
+st.title("Skin Cancer Detection (Benign vs Malignant)")
+st.caption("Educational demo only — NOT a medical diagnostic tool. Always consult a dermatologist.")
+
+uploaded = st.file_uploader("Upload a skin lesion image", type=["jpg", "jpeg", "png"])
+
+if uploaded is not None:
+    image = Image.open(uploaded).convert("RGB")
+    st.image(image, caption="Uploaded image", use_column_width=True)
+
+    img = image.resize(IMG_SIZE)
+    arr = np.array(img).astype("float32") / 255.0
+    arr = np.expand_dims(arr, axis=0)
+
+    prob = float(model.predict(arr, verbose=0).ravel()[0])
+    pred_idx = int(prob >= 0.5)
+    pred_label = class_names[pred_idx]
+    confidence = prob if pred_idx == 1 else 1 - prob
+
+    st.subheader(f"Prediction: **{pred_label.upper()}**")
+    st.write(f"Confidence: {confidence * 100:.1f}%")
+    st.progress(min(max(confidence, 0.0), 1.0))
